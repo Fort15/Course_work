@@ -17,15 +17,34 @@ if(NOT nlohmann_json_FOUND)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
+find_package(FLEX REQUIRED)
+find_package(BISON REQUIRED)
+
+file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+BISON_TARGET(SqlParser
+    "${CMAKE_CURRENT_SOURCE_DIR}/parser/sql_parser.y"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/sql_parser.cpp"
+    DEFINES_FILE "${CMAKE_CURRENT_BINARY_DIR}/generated/sql_parser.hpp"
+)
+
+FLEX_TARGET(SqlLexer
+    "${CMAKE_CURRENT_SOURCE_DIR}/parser/sql_lexer.l"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/sql_lexer.cpp"
+)
+
+ADD_FLEX_BISON_DEPENDENCY(SqlLexer SqlParser)
+
 add_executable(course_dbms
     src/main.cpp
+    src/dbms.cpp
+    ${BISON_SqlParser_OUTPUTS}
+    ${FLEX_SqlLexer_OUTPUTS}
 )
 
 target_include_directories(course_dbms PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "/home/maks-alex/FIIT_SP/associative_container/indexing_tree/b_plus_tree/include"
-    "/home/maks-alex/FIIT_SP/associative_container/include"
-    "/home/maks-alex/FIIT_SP/allocator/allocator/include"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
 )
 
 target_link_libraries(course_dbms PRIVATE nlohmann_json::nlohmann_json)
