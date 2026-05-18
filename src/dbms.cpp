@@ -33,16 +33,27 @@ struct DbError : std::runtime_error {
 };
 
 std::string upper(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(),
-                   [](unsigned char ch) { return static_cast<char>(std::toupper(ch)); });
+    for (size_t i = 0; i < value.size(); i++) {
+        value[i] = static_cast<char>(std::toupper(static_cast<unsigned char>(value[i])));
+    }
     return value;
 }
 
 bool valid_identifier(const std::string& value) {
-    if (value.empty() || std::isdigit(static_cast<unsigned char>(value.front()))) return false;
-    return std::all_of(value.begin(), value.end(), [](unsigned char ch) {
-        return std::isalnum(ch) || ch == '_';
-    });
+    if (value.empty()) return false;
+    if (value[0] >= '0' && value[0] <= '9') return false;
+
+    for (size_t i = 0; i < value.size(); i++) {
+        char ch = value[i];
+        bool is_letter = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z');
+        bool is_digit = (ch >= '0' && ch <= '9');
+        bool is_underscore = (ch == '_');
+        
+        if (!is_letter && !is_digit && !is_underscore) {
+            return false;
+        }
+    }
+    return true;
 }
 
 std::string current_timestamp() {
@@ -72,8 +83,8 @@ std::string value_to_storage(const Value& value) {
 
 Value value_from_storage(const std::string& text) {
     if (text == "N:") return std::monostate{};
-    if (text.rfind("I:", 0) == 0) return std::stoi(text.substr(2));
-    if (text.rfind("S:", 0) == 0) {
+    if (text.find("I:") == 0) return std::stoi(text.substr(2));
+    if (text.find("S:") == 0) {
         std::string out;
         const std::string raw = text.substr(2);
         for (size_t i = 0; i < raw.size(); ++i) {
@@ -169,13 +180,23 @@ public:
             for (const auto& column : columns_) actual.push_back({column.name, column.name});
         }
 
-        const bool has_aggregate = std::any_of(actual.begin(), actual.end(), [](const Projection& projection) {
-            return projection.aggregate != Projection::Aggregate::None;
-        });
+        bool has_aggregate = false;
+        for (const auto& projection : actual) {
+            if (projection.aggregate != Projection::Aggregate::None) {
+                has_aggregate = true;
+                break;
+            }
+        }
+
         if (has_aggregate) {
-            if (std::any_of(actual.begin(), actual.end(), [](const Projection& projection) {
-                    return projection.aggregate == Projection::Aggregate::None;
-                })) {
+            bool has_regular = false;
+            for (const auto& projection : actual) {
+                if (projection.aggregate == Projection::Aggregate::None) {
+                    has_regular = true;
+                    break;
+                }
+            }
+            if (has_regular) {
                 throw DbError("Cannot mix aggregate and regular SELECT projections");
             }
 
