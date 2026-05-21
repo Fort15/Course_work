@@ -158,9 +158,14 @@ public:
             row.values[pos] = token_to_value(raw_values[i], columns_[pos].type);
         }
         validate_row(row, std::nullopt);
+        insert_row_indexes(row);
+        try {
+            rows_.push_back(row);
+        } catch (...) {
+            erase_row_indexes(row);
+            throw;
+        }
         append_history("INSERT", row);
-        rows_.push_back(row);
-        rebuild_indexes();
         save_rows();
     }
 
@@ -261,9 +266,9 @@ public:
         auto targets = matching(condition);
         for (auto* row : targets) {
             append_history("DELETE", *row);
+            erase_row_indexes(*row);
             row->alive = false;
         }
-        rebuild_indexes();
         save_rows();
         return targets.size();
     }
@@ -271,16 +276,22 @@ public:
     size_t update_where(const std::vector<std::pair<std::string, Token>>& assignments, const Condition& condition) {
         auto targets = matching(condition);
         for (auto* row : targets) {
-            append_history("UPDATE", *row);
             Row candidate = *row;
             for (const auto& [name, token] : assignments) {
                 const size_t pos = column_index(name);
                 candidate.values[pos] = token_to_value(token, columns_[pos].type);
             }
             validate_row(candidate, row->id);
+            append_history("UPDATE", *row);
+            erase_row_indexes(*row);
+            try {
+                insert_row_indexes(candidate);
+            } catch (...) {
+                insert_row_indexes(*row);
+                throw;
+            }
             *row = std::move(candidate);
         }
-        rebuild_indexes();
         save_rows();
         return targets.size();
     }
@@ -407,18 +418,48 @@ private:
             index.strings.clear();
         }
         for (const auto& row : rows_) {
-            if (!row.alive) continue;
-            for (const auto& column : columns_) {
-                if (!column.indexed) continue;
-                const auto& value = row.values[column_index(column.name)];
-                if (std::holds_alternative<std::monostate>(value)) throw DbError("Indexed column contains NULL");
-                auto& index = indexes_.at(column.name);
-                bool inserted = false;
-                if (column.type == ColumnType::Int) inserted = index.ints.insert({std::get<int>(value), row.id}).second;
-                else inserted = index.strings.insert({*std::get<InternedString>(value), row.id}).second;
-                if (!inserted) throw DbError("Duplicate value for INDEXED column: " + column.name);
-            }
+            insert_row_indexes(row);
         }
+    }
+
+    void insert_row_indexes(const Row& row) {
+        if (!row.alive) return;
+        for (const auto& column : columns_) {
+            if (!column.indexed) continue;
+            const auto& value = row.values[column_index(column.name)];
+            if (std::holds_alternative<std::monostate>(value)) throw DbError("Indexed column contains NULL");
+            auto& index = indexes_.at(column.name);
+            bool inserted = false;
+            if (column.type == ColumnType::Int) inserted = index.ints.insert({std::get<int>(value), row.id}).second;
+            else inserted = index.strings.insert({*std::get<InternedString>(value), row.id}).second;
+            if (!inserted) throw DbError("Duplicate value for INDEXED column: " + column.name);
+        }
+    }
+
+    void erase_row_indexes(const Row& row) {
+        if (!row.alive) return;
+        for (const auto& column : columns_) {
+            if (!column.indexed) continue;
+            const auto& value = row.values[column_index(column.name)];
+            if (std::holds_alternative<std::monostate>(value)) continue;
+            auto& index = indexes_.at(column.name);
+            if (column.type == ColumnType::Int) index.ints.erase(std::get<int>(value));
+            else index.strings.erase(*std::get<InternedString>(value));
+        }
+    }
+
+    std::optional<size_t> indexed_row_id(const Column& column, const Value& value) const {
+        if (!column.indexed || std::holds_alternative<std::monostate>(value)) return std::nullopt;
+        const auto index_it = indexes_.find(column.name);
+        if (index_it == indexes_.end()) return std::nullopt;
+        if (column.type == ColumnType::Int) {
+            auto it = index_it->second.ints.find(std::get<int>(value));
+            if (it != index_it->second.ints.end()) return it->second;
+        } else {
+            auto it = index_it->second.strings.find(*std::get<InternedString>(value));
+            if (it != index_it->second.strings.end()) return it->second;
+        }
+        return std::nullopt;
     }
 
     void validate_row(const Row& row, std::optional<size_t> replacing_id) const {
@@ -426,12 +467,11 @@ private:
             if ((columns_[i].not_null || columns_[i].indexed) && std::holds_alternative<std::monostate>(row.values[i])) {
                 throw DbError("Column cannot be NULL: " + columns_[i].name);
             }
-        }
-        for (const auto& other : rows_) {
-            if (!other.alive || (replacing_id && other.id == *replacing_id)) continue;
-            for (size_t i = 0; i < columns_.size(); ++i) {
-                if (!columns_[i].indexed) continue;
-                if (row.values[i] == other.values[i]) throw DbError("Duplicate value for INDEXED column: " + columns_[i].name);
+            if (columns_[i].indexed) {
+                const auto existing_id = indexed_row_id(columns_[i], row.values[i]);
+                if (existing_id && (!replacing_id || *existing_id != *replacing_id)) {
+                    throw DbError("Duplicate value for INDEXED column: " + columns_[i].name);
+                }
             }
         }
     }
