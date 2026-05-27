@@ -32,26 +32,10 @@ sudo apt install flex bison
 Пакетно:
 
 ```bash
-./build/course_dbms script.sql
+./build/course_dbms test.txt
 ```
 
 Данные хранятся в каталоге `db_data` рядом с местом запуска программы.
-
-## Уже реализовано
-
-- `CREATE DATABASE`, `DROP DATABASE`, `USE`
-- `CREATE TABLE`, `DROP TABLE`
-- `INSERT INTO ... VALUE ...`
-- `SELECT *|(...) FROM ... WHERE ...`
-- `UPDATE ... SET ... WHERE ...`
-- `DELETE FROM ... WHERE ...`
-- `REVERT [table_name] [yyyy.mm.dd-hh:mm:ss.msmsms]`
-- типы `int`, `string`, `NULL`
-- ограничения `NOT_NULL`, `INDEXED`
-- уникальные индексы на `INDEXED` колонках через B+-tree
-- лексер на Flex и парсер на Bison
-- JSON-вывод для `SELECT` через `nlohmann/json`
-- пакетный и интерактивный режимы
 
 ## Дополнительные задания
 
