@@ -11,6 +11,7 @@
 %lex-param { ParseContext& ctx }
 
 %code requires {
+    #include <cctype>
     #include <stdexcept>
     #include <string>
     #include <utility>
@@ -26,14 +27,32 @@
         return value;
     }
 
+    static bool uniform_keyword_case(const std::string& value) {
+        bool has_lower = false;
+        bool has_upper = false;
+        for (unsigned char ch : value) {
+            if (std::islower(ch)) has_lower = true;
+            if (std::isupper(ch)) has_upper = true;
+
+            if (has_lower && has_upper) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     static bool keyword(const Token& token, const std::string& expected) {
-        return token.kind == TokenKind::Identifier && upper_copy(token.text) == expected;
+        if (token.kind != TokenKind::Identifier || upper_copy(token.text) != expected) return false;
+        if (!uniform_keyword_case(token.text)) {
+            throw std::runtime_error("Mixed case keyword is not allowed: " + token.text);
+        }
+        return true;
     }
 
     static Column pending_column;
 
-    static Value token_to_pending_value(const Token& token, ColumnType) {
-        if (token.kind == TokenKind::Identifier && upper_copy(token.text) == "NULL") return std::monostate{};
+    static Value token_to_pending_value(const Token& token) {
+        if (token.kind == TokenKind::Identifier && keyword(token, "NULL")) return std::monostate{};
         if (token.kind == TokenKind::Number) return std::stoi(token.text);
         if (token.kind == TokenKind::String) return intern_string(token.text);
         throw std::runtime_error("Expected DEFAULT literal");
@@ -224,7 +243,7 @@ column_mods:
     %empty
   | column_mods NOT_NULL { pending_column.not_null = true; }
   | column_mods INDEXED { pending_column.indexed = true; pending_column.not_null = true; }
-  | column_mods DEFAULT literal { pending_column.has_default = true; pending_column.default_value = token_to_pending_value($3, pending_column.type); }
+  | column_mods DEFAULT literal { pending_column.has_default = true; pending_column.default_value = token_to_pending_value($3); }
 ;
 
 type:
@@ -356,6 +375,7 @@ primary_condition:
 operand:
     IDENT {
         if (upper_copy($1) == "NULL") {
+            if (!uniform_keyword_case($1)) throw std::runtime_error("Mixed case keyword is not allowed: " + $1);
             $$ = Operand{false, "", Token{TokenKind::Identifier, std::move($1)}};
         } else {
             $$ = Operand{true, std::move($1), {}};

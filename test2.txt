@@ -1,0 +1,17 @@
+USE bt_test;
+
+SELECT * FROM numbers;
+
+INSERT INTO numbers (id) VALUE
+(100), (200), (150);
+
+SELECT * FROM numbers WHERE id == 100;
+SELECT * FROM numbers WHERE id == 150;
+SELECT * FROM numbers WHERE id == 200;
+
+SELECT (id) FROM numbers WHERE id BETWEEN 100 AND 201;
+
+DELETE FROM numbers WHERE id == 150;
+
+SELECT * FROM numbers WHERE id == 150;
+SELECT (id) FROM numbers WHERE id >= 100;

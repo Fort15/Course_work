@@ -38,7 +38,13 @@ std::vector<Token> lex_sql(const std::string& sql) {
     std::vector<Token> tokens;
     output_tokens = &tokens;
     YY_BUFFER_STATE buffer = yy_scan_bytes(sql.data(), static_cast<int>(sql.size()));
-    yylex();
+    try {
+        yylex();
+    } catch (...) {
+        yy_delete_buffer(buffer);
+        output_tokens = nullptr;
+        throw;
+    }
     yy_delete_buffer(buffer);
     output_tokens = nullptr;
     tokens.push_back({TokenKind::End, ""});
